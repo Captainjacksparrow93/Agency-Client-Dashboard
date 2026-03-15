@@ -20,8 +20,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Ensure no stale build cache is present
-RUN rm -rf .next
+# Ensure no stale build cache is present; ensure public dir exists for Next.js
+RUN rm -rf .next && mkdir -p public
 
 # Generate Prisma client
 RUN npx prisma generate
@@ -42,6 +42,8 @@ ENV HOSTNAME=0.0.0.0
 # Copy standalone server output
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+# Ensure public dir exists then copy (handles case where repo has no public assets)
+RUN mkdir -p ./public
 COPY --from=builder /app/public ./public
 
 # Copy Prisma schema and generated client (engine needs libc6-compat above)
