@@ -24,7 +24,8 @@ RUN rm -rf .next
 RUN npx prisma generate
 
 # Build Next.js with standalone output
-RUN npm run build
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build 2>&1
 
 # ─── Stage 3: Production runner ───────────────────────────────────────────────
 FROM node:20-alpine AS runner
