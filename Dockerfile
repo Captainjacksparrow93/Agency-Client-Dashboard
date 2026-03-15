@@ -9,8 +9,16 @@ RUN npm ci
 FROM node:20-alpine AS builder
 WORKDIR /app
 
+# Provide a dummy DATABASE_URL so Prisma client can be generated during build
+# (actual DB path is set at runtime via docker-compose env_file)
+ARG DATABASE_URL=file:/tmp/build.db
+ENV DATABASE_URL=$DATABASE_URL
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# Ensure no stale build cache is present
+RUN rm -rf .next
 
 # Generate Prisma client (uses schema.prisma)
 RUN npx prisma generate
