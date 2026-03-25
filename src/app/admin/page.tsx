@@ -12,7 +12,7 @@ import {
   Pencil, Trash2, Shield, UserPlus, PackagePlus, Building2,
   Mail, Phone, Briefcase, ToggleLeft, ToggleRight, Search,
   ChevronDown, Activity, Percent, Wallet, RefreshCw, UserCog,
-  LayoutDashboard, ListTodo, Settings, UserCheck
+  LayoutDashboard, ListTodo, Settings, UserCheck, PlusCircle, MinusCircle
 } from 'lucide-react'
 
 // ────────────────────────────────────────────
@@ -193,6 +193,17 @@ export default function AdminDashboard() {
   const [clientForm, setClientForm] = useState({ name: '', email: '', phone: '', company: '', walletBalance: '' })
   const [retainerItems, setRetainerItems] = useState<{ serviceItemId: string; quantity: number }[]>([])
   const [availableServices, setAvailableServices] = useState<ServiceItem[]>([])
+
+  // Wallet adjustment modal
+  const [walletModal, setWalletModal] = useState<{ client: Client } | null>(null)
+  const [walletForm, setWalletForm] = useState({ type: 'credit', amount: '', description: '' })
+  const [savingWallet, setSavingWallet] = useState(false)
+
+  // Admin-create-task modal
+  const [taskModal, setTaskModal] = useState<{ client: Client } | null>(null)
+  const [adminTaskForm, setAdminTaskForm] = useState({ title: '', description: '', priority: 'medium' })
+  const [adminTaskItems, setAdminTaskItems] = useState<{ serviceItemId: string; quantity: number }[]>([])
+  const [savingAdminTask, setSavingAdminTask] = useState(false)
 
   // Employees state
   const [employees, setEmployees] = useState<any[]>([])
@@ -545,6 +556,98 @@ export default function AdminDashboard() {
 
   function removeRetainerRow(index: number) {
     setRetainerItems(prev => prev.filter((_, i) => i !== index))
+  }
+
+  // ────────────────────────────────────────────
+  // Wallet adjustment
+  // ────────────────────────────────────────────
+  function openWalletModal(client: Client) {
+    setWalletModal({ client })
+    setWalletForm({ type: 'credit', amount: '', description: '' })
+  }
+
+  async function handleWalletAdjust() {
+    if (!walletModal || !walletForm.amount || parseFloat(walletForm.amount) <= 0) {
+      toast.error('Enter a valid amount')
+      return
+    }
+    setSavingWallet(true)
+    try {
+      const res = await fetch(`/api/admin/clients/${walletModal.client.id}/wallet`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: walletForm.type,
+          amount: parseFloat(walletForm.amount),
+          description: walletForm.description || undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed')
+      toast.success(`Wallet ${walletForm.type === 'credit' ? 'credited' : 'debited'} successfully`)
+      setWalletModal(null)
+      await fetchClients()
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to adjust wallet')
+    } finally {
+      setSavingWallet(false)
+    }
+  }
+
+  // ────────────────────────────────────────────
+  // Admin task creation for client
+  // ────────────────────────────────────────────
+  function openTaskModal(client: Client) {
+    setTaskModal({ client })
+    setAdminTaskForm({ title: '', description: '', priority: 'medium' })
+    setAdminTaskItems([])
+  }
+
+  function addAdminTaskItem() {
+    setAdminTaskItems(prev => [...prev, { serviceItemId: '', quantity: 1 }])
+  }
+
+  function updateAdminTaskItem(index: number, field: string, value: any) {
+    setAdminTaskItems(prev => prev.map((item, i) => i === index ? { ...item, [field]: value } : item))
+  }
+
+  function removeAdminTaskItem(index: number) {
+    setAdminTaskItems(prev => prev.filter((_, i) => i !== index))
+  }
+
+  async function handleCreateAdminTask() {
+    if (!taskModal) return
+    if (!adminTaskForm.title.trim()) {
+      toast.error('Task title is required')
+      return
+    }
+    if (adminTaskItems.length === 0 || adminTaskItems.some(i => !i.serviceItemId)) {
+      toast.error('Add at least one service item')
+      return
+    }
+    setSavingAdminTask(true)
+    try {
+      const res = await fetch('/api/admin/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: taskModal.client.id,
+          title: adminTaskForm.title,
+          description: adminTaskForm.description,
+          priority: adminTaskForm.priority,
+          items: adminTaskItems.filter(i => i.serviceItemId && i.quantity > 0),
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed')
+      toast.success('Task created for client')
+      setTaskModal(null)
+      await fetchClients()
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to create task')
+    } finally {
+      setSavingAdminTask(false)
+    }
   }
 
   // ────────────────────────────────────────────
@@ -1420,6 +1523,7 @@ export default function AdminDashboard() {
                       <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Wallet</th>
                       <th className="text-center text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Tasks</th>
                       <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Joined</th>
+                      <th className="text-center text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
@@ -1467,6 +1571,24 @@ export default function AdminDashboard() {
                         </td>
                         <td className="px-4 py-3 text-right text-sm text-gray-500">
                           {new Date(client.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => openWalletModal(client)}
+                              title="Adjust Wallet"
+                              className="p-1.5 rounded-lg hover:bg-emerald-50 text-gray-400 hover:text-emerald-600 transition-colors"
+                            >
+                              <Wallet className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => openTaskModal(client)}
+                              title="Add Task for Client"
+                              className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-400 hover:text-blue-600 transition-colors"
+                            >
+                              <PackagePlus className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1557,6 +1679,260 @@ export default function AdminDashboard() {
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════ */}
+      {/* WALLET ADJUSTMENT MODAL                 */}
+      {/* ═══════════════════════════════════════ */}
+      {walletModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 animate-in fade-in">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center">
+                <Wallet className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">Adjust Wallet</h3>
+                <p className="text-sm text-gray-500">{walletModal.client.name}</p>
+              </div>
+              <button
+                onClick={() => setWalletModal(null)}
+                className="ml-auto p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="mb-2 flex items-center gap-2 text-sm text-gray-500">
+              <IndianRupee className="w-4 h-4" />
+              Current balance:
+              <span className="font-semibold text-gray-900">{formatCurrency(walletModal.client.wallet?.balance || 0)}</span>
+            </div>
+
+            <div className="space-y-4 mt-4">
+              {/* Type */}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setWalletForm(f => ({ ...f, type: 'credit' }))}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 text-sm font-medium transition-all ${
+                    walletForm.type === 'credit'
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                      : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                  }`}
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  Add Funds
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWalletForm(f => ({ ...f, type: 'debit' }))}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 text-sm font-medium transition-all ${
+                    walletForm.type === 'debit'
+                      ? 'border-red-500 bg-red-50 text-red-700'
+                      : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                  }`}
+                >
+                  <MinusCircle className="w-4 h-4" />
+                  Deduct Funds
+                </button>
+              </div>
+
+              {/* Amount */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Amount (₹) *</label>
+                <input
+                  type="number"
+                  min="1"
+                  className="input-field"
+                  placeholder="e.g. 5000"
+                  value={walletForm.amount}
+                  onChange={e => setWalletForm(f => ({ ...f, amount: e.target.value }))}
+                />
+              </div>
+
+              {/* Note */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Note (optional)</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  placeholder="Reason for adjustment"
+                  value={walletForm.description}
+                  onChange={e => setWalletForm(f => ({ ...f, description: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={handleWalletAdjust}
+                disabled={savingWallet}
+                className={`btn-primary flex-1 flex items-center justify-center gap-2 ${
+                  walletForm.type === 'debit' ? '!bg-red-500 hover:!bg-red-600' : ''
+                }`}
+              >
+                {savingWallet ? <Loader2 className="w-4 h-4 animate-spin" /> : (
+                  walletForm.type === 'credit' ? <PlusCircle className="w-4 h-4" /> : <MinusCircle className="w-4 h-4" />
+                )}
+                {walletForm.type === 'credit' ? 'Add Funds' : 'Deduct Funds'}
+              </button>
+              <button onClick={() => setWalletModal(null)} className="btn-secondary">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════ */}
+      {/* ADD TASK FOR CLIENT MODAL               */}
+      {/* ═══════════════════════════════════════ */}
+      {taskModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 animate-in fade-in max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
+                <PackagePlus className="w-5 h-5 text-blue-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">Add Task for Client</h3>
+                <p className="text-sm text-gray-500">{taskModal.client.name}{taskModal.client.company ? ` · ${taskModal.client.company}` : ''}</p>
+              </div>
+              <button
+                onClick={() => setTaskModal(null)}
+                className="ml-auto p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Title */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Task Title *</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  placeholder="e.g. Social Media Posts – April"
+                  value={adminTaskForm.title}
+                  onChange={e => setAdminTaskForm(f => ({ ...f, title: e.target.value }))}
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  className="input-field min-h-[80px] resize-none"
+                  placeholder="Task details..."
+                  value={adminTaskForm.description}
+                  onChange={e => setAdminTaskForm(f => ({ ...f, description: e.target.value }))}
+                />
+              </div>
+
+              {/* Priority */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                <select
+                  className="input-field"
+                  value={adminTaskForm.priority}
+                  onChange={e => setAdminTaskForm(f => ({ ...f, priority: e.target.value }))}
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="urgent">Urgent</option>
+                </select>
+              </div>
+
+              {/* Service Items */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">Service Items *</label>
+                  <button
+                    type="button"
+                    onClick={addAdminTaskItem}
+                    className="btn-secondary text-xs flex items-center gap-1"
+                  >
+                    <Plus className="w-3 h-3" />
+                    Add Item
+                  </button>
+                </div>
+
+                {adminTaskItems.length === 0 && (
+                  <p className="text-sm text-gray-400 text-center py-3 border-2 border-dashed border-gray-200 rounded-xl">
+                    No items added yet — click Add Item above
+                  </p>
+                )}
+
+                {adminTaskItems.length > 0 && (
+                  <div className="space-y-2">
+                    {adminTaskItems.map((item, idx) => (
+                      <div key={idx} className="flex items-center gap-2 bg-gray-50 rounded-xl p-2.5 border border-gray-200">
+                        <select
+                          className="input-field flex-1 text-sm"
+                          value={item.serviceItemId}
+                          onChange={e => updateAdminTaskItem(idx, 'serviceItemId', e.target.value)}
+                        >
+                          <option value="">Select service...</option>
+                          {availableServices.filter(s => s.isActive).map(svc => (
+                            <option key={svc.id} value={svc.id}>
+                              {svc.name} — {formatCurrency(svc.price)}/{svc.unit}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          min="1"
+                          className="input-field w-20 text-sm"
+                          placeholder="Qty"
+                          value={item.quantity}
+                          onChange={e => updateAdminTaskItem(idx, 'quantity', parseInt(e.target.value) || 1)}
+                        />
+                        <button
+                          onClick={() => removeAdminTaskItem(idx)}
+                          className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
+                        >
+                          <XCircle className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+
+                    {/* Cost preview */}
+                    {adminTaskItems.some(i => i.serviceItemId) && (
+                      <div className="flex justify-between items-center px-2 py-1.5 bg-blue-50 rounded-lg text-sm">
+                        <span className="text-gray-600">Estimated total</span>
+                        <span className="font-semibold text-blue-700">
+                          {formatCurrency(
+                            adminTaskItems.reduce((sum, item) => {
+                              const svc = availableServices.find(s => s.id === item.serviceItemId)
+                              return sum + (svc ? svc.price * item.quantity : 0)
+                            }, 0)
+                          )}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={handleCreateAdminTask}
+                disabled={savingAdminTask}
+                className="btn-primary flex-1 flex items-center justify-center gap-2"
+              >
+                {savingAdminTask ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackagePlus className="w-4 h-4" />}
+                Create Task
+              </button>
+              <button onClick={() => setTaskModal(null)} className="btn-secondary">
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </AppLayout>
